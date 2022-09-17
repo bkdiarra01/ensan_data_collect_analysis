@@ -341,6 +341,7 @@ dta_mng %>%
 
 ### Nombre de questionnaires par équipe
 
+<<<<<<< HEAD
 
 ```{r fig.height= 8, fig.cap="Nombre de questionnaires par types"}
 nb_obs %>% select(-c(q12_nom_cercle, duree_envoi, echantillon, 
@@ -360,6 +361,8 @@ nb_obs %>% select(-c(q12_nom_cercle, duree_envoi, echantillon,
   theme_bw()
 ```
 
+=======
+>>>>>>> 85eff31bc6e40d060b27e286222a28047386081c
 ```{r, tab.cap="Nombre de questionnaires par types"}
 nb_obs %>% select(-c(duree_envoi, echantillon, tx_realisation)) %>% 
   mise_en_forme()
@@ -401,7 +404,11 @@ nb_obs %>%
   coord_flip() +
   theme_bw()
 ```
+<<<<<<< HEAD
 ```{r eval=F}
+=======
+```{r}
+>>>>>>> 85eff31bc6e40d060b27e286222a28047386081c
 list_enqtr <- mutate(list_enqtr, EnumName = as.character(EnumName))
 ```
 
