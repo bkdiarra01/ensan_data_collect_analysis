@@ -3,9 +3,7 @@ title: "Enquête Nationale sur la Sécurité Alimentaire et Nutritionnelle - Sep
 subtitle : "Rapport de suivi journalier de la collecte"
 author: "Comité Technique ENSAN "
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output: word_document
-toc: true 
-  toc_depth: 5
+output: officedown::rdocx_document 
 editor_options: 
   chunk_output_type: inline
 ---
@@ -13,9 +11,13 @@ editor_options:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo=F, warning = F,  fig.width=10, fig.height=10, 
-                      tab.topcaption=TRUE, ft.align="center",
-                      tab.cap.pre = "Tableau ", message = F)
+knitr::opts_chunk$set(echo=F, warning = F, message = F,  fig.width=7,
+                      fig.height=7.8, tab.topcaption=TRUE, ft.align="center",
+                      tab.cap.pre = "Tableau ", fig.cap = TRUE, 
+                      fig.cap.style = "Image Caption",
+                      fig.cap.pre = "Graphique ",
+                      fig.cap.sep = ": ",
+                      fig.topcaption = TRUE)
 
 library(tidyverse)
 library(haven)
@@ -29,10 +31,16 @@ library(flextable)
 library(readxl)
 library(RColorBrewer)
 library(sjlabelled)
+library(officedown)
+library(officer)
+
+options(dplyr.summarise.inform = FALSE)
 
 ```
 
-```{r utilitaires}
+
+
+```{r utilitaires, include=FALSE}
 mise_en_forme <- function(tableau, ...) {
   
   options(digits=2)
@@ -66,105 +74,52 @@ small_border = fp_border_default(color="#0080FF80", width = 1)
 theme_custom <- function() {
   theme_bw() +
     theme(
-      plot.title = element_text(size = 10, face = "bold", hjust = .5,
+      plot.title = element_text(size = 11, face = "bold", hjust = .5,
                                 margin = margin(t = 5, b = 15),
-                                colour = "#0080FF80"),
+                                colour = "black"),
+      plot.background = element_rect(colour = "black", size = 2),
       panel.border = element_rect(colour = "#0080FF80"),
       panel.grid.major = element_line(colour = "#0080FF80"),
       panel.grid.minor = element_blank(),
-      legend.title = element_text(size = 9, face = "bold"),
-      legend.text = element_text(size = 9),
-      axis.text = element_text(size = 9),
-      axis.title= element_blank(), 
+      legend.background = element_rect(colour = "black", size = 1),
+      legend.title = element_text(size = 6, face = "bold"),
+      legend.text = element_text(size = 6),
       legend.position = "bottom",
-      axis.text.y = element_blank()
+      axis.text = element_text(size=rel(0.5), face = "bold"),
+      axis.title= element_blank()
     )
 }
 
-tableau_c <- function(var_ligne, var_col, poids){
-  df <- tibble(var_ligne, var_col, poids)
-  tab1 <- df %>% 
-  select(var_col, poids) %>% 
-  sjlabelled::as_label() %>% 
-  group_by(var_col) %>% 
-  summarise(effectif = sum(poids)) %>% 
-  mutate(var_ligne = as_factor("Ensemble"), .before = 1)
-
-tab <- df %>% 
-  select(var_ligne, var_col, poids) %>% 
-   sjlabelled::as_label() %>%
-  group_by(var_ligne, var_col) %>% 
-  summarise(effectif = sum(poids)) %>% 
-  bind_rows(tab1) %>% 
-  group_by(var_ligne) %>% 
-  mutate(pct = round(100 * effectif / sum(effectif),1)) %>% 
-  select(var_ligne, var_col, pct) 
-
-return(tab)
-}
-
-#Tableau de contingence
-cross_tab <- function(var_ligne, var_col, poids){
-  
-  df <- tibble(var_ligne, var_col, poids)
-  
-  #Obtenir le tableau de contingence
-  tab <- tableau_c(var_ligne, var_col, poids)
-  
-  names(tab)[1] <- get_label(df$var_ligne)
- 
-  #Agréger suivant la variable en ligne  
-tab <- tab %>% 
-  pivot_wider(names_from = var_col, 
-              values_from = pct, values_fill = 0) 
- 
-#Sortie
-mise_en_forme(tab)
-}
-
-#Création d'une fonction permettant d'inclure dans le rapport le résumé stats d'une variable quantitative.
-stat_desc <- function(var_ligne, var_col, poids){
-  df <- tibble(var_ligne, var_col, poids)
-  
- 
-  #Statistiques descriptives sur l'ensemble de la base
-  
-  tab <- df %>% select(var_col, poids) %>% 
-    summarise(n = sum(!is.na(var_col), na.rm = T),
-              moyenne = wtd.mean(x = var_col, weights = poids, normwt = T,
-                                 na.rm = TRUE),
-              mediane = wtd.quantile(var_col, weights = poids, probs = 0.5,
-                                     normwt = T, na.rm = T),
-    ecart.type = sqrt(wtd.var(var_col, weights = var_col, normwt = T,
-                              na.rm = T)),
-    minimum = min(var_col, na.rm = T),
-    maximum = max(var_col, na.rm = T)) %>% 
-  mutate(var_ligne = as_factor("Ensemble"), .before = 1)
-     
-  #Statistiques descriptives par catégories
-  res <- df %>% as_label() %>% 
-    group_by(var_ligne) %>%
-    summarise(n = sum(!is.na(var_col), na.rm = T),
-              moyenne = wtd.mean(x = var_col, weights = poids, normwt = T,
-                                 na.rm = TRUE),
-              mediane = wtd.quantile(var_col, weights = poids, probs = 0.5,
-                                     normwt = T, na.rm = T),
-    ecart.type = sqrt(wtd.var(var_col, weights = var_col, normwt = T,
-                              na.rm = T)),
-    minimum = min(var_col, na.rm = T),
-    maximum = max(var_col, na.rm = T)) %>%
-    bind_rows(tab) 
-  
-  
-  
-   #Noms des variables du tableau
-  colnames(res) <- c(get_label(df$var_ligne), names(res)[2:7])
-  
-  mise_en_forme(res)
-}
-
+#modifier la fonction rowSums pour rendre na.rm = T par défaut
+rowsom <- function(x)rowSums(x, na.rm = T)
 
 ```
+
+\newpage
+
+# Table des matières {-}
+
+```{r}
+block_toc()
+```
+
+\newpage
+
+# Liste des tableaux {-}
+
+```{r}
+block_toc(seq_id = "tab")
+```
+
+\newpage
+
+# Liste des graphiques  {-}
+
+```{r}
+block_toc(style = "Image Caption")
+```
+
+\newpage
 
 
 ```{r data, include=FALSE}
@@ -201,23 +156,14 @@ submission_mng <- dta_mng %>% group_by(Survey_date) %>%
   summarise(menage = n())
 ```
 
-```{r}
-#Importer les bases au format xlsx
-files <- c("list_enqtr.xlsx", "list_equipe.xlsx")
-df_list <- map(files, read_xlsx)
-
-names(df_list) <- str_remove(files, "\\.xlsx$")
-
-names(df_list) <- str_remove(files, ".xlsx$")
-list2env(df_list, .GlobalEnv)
-
+```{r, include=FALSE}
 #Liste des équipes
-list_equipe <- list_equipe %>% 
-  rename(q18_code_equipe =q18_code_equipe) %>% 
+list_equipe <- readxl::read_xlsx("list_equipe.xlsx") %>% 
+  dplyr::rename(q18_code_equipe =q18_code_equipe) %>% 
   select(q18_code_equipe, echantillon=Nb_menage)
 
 #Liste des enquêteurs
-list_enqtr <- list_enqtr %>% 
+list_enqtr <- readxl::read_xlsx("list_enqtr.xlsx") %>% 
   select(EnumName = CODE, nom_enqtr = `PRENOMS ET NOMS`,
          telephone = TELEPHONE)
   
@@ -259,10 +205,11 @@ dta_anthropo %>%
     labs(title = "Nombre de questionnaires envoyés par jour") +
   theme_custom()
 ```
+\newpage
 
 ### Durée moyenne entre le début de la collecte et l'envoi sur le serveur
 
-```{r, fig.cap="Durée moyenne d'envoi des données par équipe"}
+```{r, fig.cap="Durée moyenne d'envoi des données par équipe", message=F}
 #Nombre d'observations par questionnaires et par cercle.
 #Questionnaire ménage
 nb_menage <- dta_mng %>%  
@@ -270,8 +217,6 @@ nb_menage <- dta_mng %>%
   dplyr::group_by(q18_code_equipe) %>% 
   mutate(menage = n(),
         duree_envoi = round(mean(duree_envoi, na.rm = T), 1)) %>%
-  ungroup() %>%
-  dplyr::group_by(q12_nom_cercle, q18_code_equipe) %>% 
   slice(1) %>% ungroup() %>%
   left_join(list_equipe) %>% 
   mutate(tx_realisation = round(100 * menage/echantillon, 1)) %>% 
@@ -310,79 +255,92 @@ mutate(q18_code_equipe = fct_reorder(q18_code_equipe, duree_envoi,
                                      .desc = TRUE)) %>%
   ggplot(aes(x = q18_code_equipe, y = duree_envoi)) + 
   geom_bar(stat = "identity", fill = "steel blue") +
-  geom_text(aes(y = duree_envoi, label = duree_envoi), hjust = -.1) +
+  geom_text(aes(y = duree_envoi, label = duree_envoi), hjust = -.1,
+            colour = "black", fontface = "bold", size = 2.5) +
+  scale_y_continuous(labels = abs, expand = c(0, 0)) +
   labs(x = "Equipe",
        y = "Nombre de jours",
        title = "Durée moyenne d'envoi des données (en jours)",
        caption = "Données: ENSAN-Septembre 2022") +
   coord_flip() +
-  theme_bw()
+ theme_custom()
 ```
+\newpage
 
-### Liste des équipes qui n'ont pas du tout envoyé de données
+### Liste des équipes qui n'ont pas envoyé de données depuis 3 jours ou plus
 
-**Jusqu'à cette date, les équipes qui suivent n'ont pas encore envoyé de données sur le serveur. Les coordinateurs régionaux concernés sont priés de prendre les dispositions qui s'imposent**
+**Les équipes qui suivent n'ont pas envoyé de données sur le serveur depuis 3 jours ou plus. Les coordinateurs régionaux concernés sont priés de prendre les dispositions qui s'imposent en vue d'un suivi régulier de la collecte**
 
-```{r, tab.cap="Liste des équipes n'ayant pas envoyé de données sur le serveur"}
-dta_mng %>%  
-  dplyr::select(q18_code_equipe) %>% 
+```{r, tab.cap="Liste des équipes n'ayant pas envoyé de données sur le serveur depuis 3 jours ou plus"}
+dta_mng %>% filter(Survey_date < as.Date("2021-10-11")) %>% 
+  mutate(duree_envoi = difftime(as.Date("2021-10-11"), Survey_date,
+                                units = "days"),
+         duree_envoi = as_numeric(duree_envoi)) %>% 
   dplyr::group_by(q18_code_equipe) %>% 
-  count() %>% ungroup() %>% 
+  dplyr::summarise(duree_min = min(duree_envoi, na.rm = T),
+                   dernier_envoi = paste0(duree_min, " jours")) %>% 
   right_join(list_equipe) %>%
   mutate(EnumName = q18_code_equipe*10 + 1) %>% 
   left_join(list_enqtr) %>% 
   mutate(telephone = as_factor(telephone)) %>% to_label() %>% 
-  select(q18_code_equipe, chef_equipe = nom_enqtr, telephone) %>% 
- filter(is.na(n)) %>% 
+  filter(is.na(duree_min) | duree_min > 3) %>% 
+  select(q18_code_equipe, chef_equipe=nom_enqtr, telephone, dernier_envoi) %>% 
   mise_en_forme()
   
 ```
-
+\newpage
 
 ### Nombre de questionnaires par équipe
 
-<<<<<<< HEAD
 
-```{r fig.height= 8, fig.cap="Nombre de questionnaires par types"}
+```{r, fig.cap="Nombre de questionnaires par types"}
 nb_obs %>% select(-c(q12_nom_cercle, duree_envoi, echantillon, 
                      tx_realisation)) %>%
   pivot_longer(-q18_code_equipe) %>%
   mutate(name = factor(name, levels = c("menage", "anthropo",
                                         "fefa", "child_u5"), ordered = T)) %>% 
-  group_by(q18_code_equipe) %>%
-  arrange(q18_code_equipe, desc(name)) %>%
-  mutate(lab_ypos = cumsum(value) - 0.5 * value) %>% ungroup() %>% 
-  ggplot(aes(x = q18_code_equipe, y = value)) +
-    geom_col(aes(fill = name), width = 0.7)+
-    geom_text(aes(y = lab_ypos, label = value, group =name), color = "white") +
-  scale_fill_manual(values = c("#228833", "#0073C2FF", "#EFC000FF", "#EE6677")) +
-    labs(title = "Nombre de questionnaires envoyés") +
+  ggplot(aes(x=q18_code_equipe, y = value, fill = name))+
+    geom_bar(position = position_fill(reverse = TRUE), stat = "identity") +
+    geom_text(aes(y = value, label = value), 
+              position = position_fill(.5, reverse = TRUE),
+              colour = "black", fontface = "bold", size = 2.5, hjust = .5) +
+    scale_x_discrete(labels = scales::label_wrap(50)) +
+    scale_y_continuous(breaks = seq(0, 1500, by = 300), labels = abs,
+                     expand = c(0, 0)) +
+  scale_fill_manual(values = c("#228833", "#0073C2FF", "#EFC000FF",
+                               "#EE6677")) +
+    labs(x = "",
+      title = "Nombre de questionnaires envoyés") +
    coord_flip() +
-  theme_bw()
+  theme_custom()
 ```
 
-=======
->>>>>>> 85eff31bc6e40d060b27e286222a28047386081c
+\newpage
+
+
 ```{r, tab.cap="Nombre de questionnaires par types"}
 nb_obs %>% select(-c(duree_envoi, echantillon, tx_realisation)) %>% 
   mise_en_forme()
 ```
+\newpage
 
 ### Nombre de ménages enquêtés en pourcentage du nombre prévu par équipe
 
 ```{r, fig.cap="Pourcentage de ménages enquêtés par équipe"}
 ggplot(nb_obs, aes(x = q18_code_equipe, y = tx_realisation)) + 
   geom_bar(stat = "identity", fill = "steel blue") +
-  geom_text(aes(y = tx_realisation, label = tx_realisation), hjust = -.1) +
-  expand_limits(y = c(0, 100)) +
-  scale_y_continuous(breaks = seq(0, 100, by = 10), labels = abs) + 
+  geom_text(aes(y = tx_realisation, label = tx_realisation), hjust = -.1,
+            size = 2.5) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10), labels = abs,
+                     expand = c(0, 0)) + 
   labs(x = "Equipe",
        y = "Pourcentage de ménages enquêtés",
        title = "Pourcentage de ménages enquêtés par équipe",
        caption = "Données: ENSAN-Septembre 2022") +
   coord_flip() +
-  theme_bw()
+  theme_custom()
 ```
+\newpage
 
 ### Nombre de ménages enquêtés en pourcentage du nombre prévu par cercle
 
@@ -396,178 +354,894 @@ nb_obs %>%
   geom_bar(stat = "identity", fill = "steel blue") +
   geom_text(aes(y = tx_realisation, label = tx_realisation), hjust = -.1) +
   expand_limits(y = c(0, 100)) +
-  scale_y_continuous(breaks = seq(0, 100, by = 10), labels = abs) + 
+  scale_y_continuous(breaks = seq(0, 100, by = 10), labels = abs,
+                     expand = c(0, 0)) + 
   labs(x = "Cercle",
        y = "Pourcentage de ménages enquêtés",
-       title = "Pourcentage de ménages enquêtés par équipe",
+       title = "Pourcentage de ménages enquêtés par cercle",
        caption = "Données: ENSAN-Septembre 2022") +
   coord_flip() +
-  theme_bw()
+  theme_custom()
 ```
-<<<<<<< HEAD
-```{r eval=F}
-=======
+
+
+\newpage
+
+
+## Score de consommation alimentaire (FCS) / Groupes de consommation alimentaire (FCG)
+
+### Groupes de consommation alimentaire par équipe 
+
+```{r, fig.cap="Groupes de consommation alimentaire par équipe"}
+dta_mng <- dta_mng %>% 
+  mutate(FCS = (2 * FCSStap) + (3 * FCSPulse)+ (4*FCSPr) + FCSVeg +
+           FCSFruit + (4*FCSDairy) + (0.5*FCSFat) + (0.5*FCSSugar),
+         FCSCat28 = case_when( FCS <= 28 ~ "Pauvre", 
+                        between(FCS, 28, 42) ~ "Limite",
+                        FCS > 42 ~ "Acceptable"))
+
+#fcg colors
+fcg_colors = c("Acceptable" = "#27AE60","Limite" = "#F1C40F","Pauvre" = "#C0392B")
+
+#Fonction permettant de faire les graphiques
+graph_equipe <- function(df, equipe, var_cat, couleur, titre){
+  
+  equipe <- enquo(equipe)
+  var_cat <- enquo(var_cat)
+
+  df %>% 
+  group_by((!!equipe), (!!var_cat)) %>% 
+  summarise(n = n()) %>% 
+  group_by(!!equipe) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>% 
+  ungroup() %>%
+  set_value_labels() %>% as_label() %>% select(-n) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  ggplot(aes(x=(!!equipe), y = perc, fill = (!!var_cat)))+
+    geom_bar(position = position_fill(reverse = TRUE), stat = "identity") +
+    geom_text(
+    aes(y = perc, label = perc), position = position_fill(.5, reverse = TRUE),
+    colour = "black", fontface = "bold", size = 2.5, hjust = .5) +
+    scale_x_discrete(labels = scales::label_wrap(50)) +
+    scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+    scale_fill_manual(values=couleur) + 
+    labs(x = "",
+       y = "",
+       title = titre,
+       caption = "Données: ENSAN-Septembre 2022") +
+    coord_flip() +
+    theme_custom()
+}
+
+#Appel de la fonction
+graph_equipe(dta_mng, q18_code_equipe, FCSCat28, fcg_colors,
+             titre = "Groupe de consommation alimentaire par équipe")
+```
+\newpage
+
+### Groupes de consommation alimentaire par cercle et Code de l'enquêteur
+
+```{r, fig.cap="Groupes de consommation alimentaire par enquêteur et cercle"}
+
+#Fonction permettant de faire les graphiques
+graph_enqtr <- function(df, enqtr, admin, var_cat, couleur, titre){
+  
+  enqtr <- enquo(enqtr)
+  admin <- enquo(admin)
+  var_cat <- enquo(var_cat)
+
+  df %>% 
+  group_by((!!enqtr), (!!admin), (!!var_cat)) %>% 
+  summarise(n = n()) %>% 
+  group_by((!!enqtr), (!!admin)) %>% 
+  mutate(perc = round(100 * n / sum(n), 1),
+         (!!enqtr) :=  as_factor(!!enqtr)) %>% 
+  ungroup() %>% 
+  set_value_labels() %>% to_label() %>% select(-n) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  ggplot(aes(x=(!!enqtr), y = perc, fill = (!!var_cat)))+
+    geom_bar(position = position_fill(reverse = TRUE), stat = "identity") +
+    scale_x_discrete(labels = scales::label_wrap(50)) +
+    scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+    scale_fill_manual(values=couleur) + 
+    facet_wrap(q12_nom_cercle ~ ., scales = "free_x") +
+    labs(x = "Cercle",
+       y = "",
+       title = titre,
+       caption = "Données: ENSAN-Septembre 2022") +
+  theme_custom()+
+  theme(strip.background = element_rect(fill = "black", color = "#0080FF80", 
+                                        size = .7),
+        strip.text = element_text(colour = "white"),
+        axis.text.x=element_text(angle=90)
+        )
+}
+
+#Appel de la fonction
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, FCSCat28, fcg_colors,
+            titre = "Groupe de consommation alimentaire par enquêteur et cercle")
+```
+\newpage
+
+### Liste des enquêteurs ayant plus de 50% de consommation pauvre ou limite
+
+*(voir la liste en annexe)*
+
+```{r, tab.caption = "Liste des enquêteurs ayant plus de 50% de consommation pauvre ou limite"}
+list_enqtr <- rename(list_enqtr, q18_code_enqueteur = EnumName)
+err_conso_1 <- dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, FCSCat28) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(FCSCat28 %in% c("Limite", "Pauvre")) %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  filter(pourcentage > 50) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+\newpage
+
+
+### Nombre de jours de consommation de céréales inférieur à 3
+
+```{r, tab.caption = "Liste des enquêteurs ayant moins de 3 jours pour céréales"}
+dta_mng %>% 
+  select(q18_code_enqueteur, FCSStap) %>% 
+  filter(FCSStap < 3) %>%
+  group_by(q18_code_enqueteur) %>% summarise(nb_cas = n()) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+
+### Consommation alimentaire du sous-groupe supérieur à celle du groupe global
+
+```{r, tab.caption = "Incohérence entre sous-groupe et groupe global"}
+dta_mng <- dta_mng %>% 
+  mutate(incoh_fruit = FCSFruit < pmax(FCSFruitOrg, FCSFruitOth, na.rm = T),
+         incoh_pr = FCSPr < pmax(FCSPrMeatF, FCSPrMeatO, FCSPrFish,
+                                FCSPrEgg, na.rm = T),
+         incoh_veg = FCSVeg < pmax(FCSVegOrg, FCSVegGre, FCSVegOth, na.rm = T),
+         incoherence_group = any(incoh_fruit, incoh_pr, incoh_veg))
+
+
+
+dta_mng %>% 
+  select(q18_code_enqueteur, incoherence_group)%>% 
+  filter(incoherence_group) %>% 
+  group_by(q18_code_enqueteur) %>% summarise(nb_cas = n()) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+\newpage
+
+
+## Score de la diversité alimentaire des ménages (HDDS)
+
+
+### Phasage de HDDS par équipe
+
 ```{r}
->>>>>>> 85eff31bc6e40d060b27e286222a28047386081c
-list_enqtr <- mutate(list_enqtr, EnumName = as.character(EnumName))
+dta_mng <- dta_mng %>% mutate(
+  HDDSStapCer = case_when(HDDSStapCer == 1 ~ 1, TRUE ~ 0),
+  HDDSStapRoot = case_when(HDDSStapRoot  == 1 ~ 1, TRUE ~ 0),
+  HDDSVeg = case_when(HDDSVegOrg  == 1 | HDDSVegGre == 1 | 
+                        HDDSVegOth == 1 ~ 1, TRUE ~ 0),
+  HDDSFruit = case_when(HDDSFruitOrg == 1 | HDDSFruitOth == 1 ~ 1, TRUE ~ 0),
+  HDDSPrMeat = case_when(HDDSPrMeatF == 1 | HDDSPrMeatO == 1 ~ 1, TRUE ~ 0),
+  HDDSPrEgg = case_when(HDDSPrEgg  == 1 ~ 1, TRUE ~ 0),
+  HDDSPrFish = case_when(HDDSPrFish == 1 ~ 1, TRUE ~ 0),
+  HDDSPulse = case_when(HDDSPulse == 1 ~ 1, TRUE ~ 0),
+  HDDSDairy = case_when(HDDSDairy == 1 ~ 1, TRUE ~ 0),
+  HDDSFat = case_when(HDDSFat == 1 ~ 1, TRUE ~ 0),
+  HDDSSugar = case_when(HDDSSugar == 1 ~ 1, TRUE ~ 0),
+  HDDSCond = case_when(HDDSCond == 1 ~ 1, TRUE ~ 0))
+
+#Calcul de HDDS et les seuils de phasage du CH
+dta_mng <- dta_mng %>% 
+  mutate(HDDS = HDDSStapCer + HDDSStapRoot + HDDSVeg +HDDSFruit + HDDSPrMeat +
+           HDDSPrEgg + HDDSPrFish + HDDSPulse + HDDSDairy + HDDSFat + 
+           HDDSSugar + HDDSCond,
+         HDDS_CH = case_when( HDDS >= 5 ~ "Phase1",
+                              HDDS == 4 ~ "Phase2",
+                              HDDS == 3 ~ "Phase3",
+                              HDDS == 2 ~ "Phase4",
+                              HDDS < 2 ~ "Phase5")
+         )
+#summarise(dta_mng, across(HDDS:HDDS_CH, ~max(.x, na.rm = T)))
+#CH colors
+CH_colors = c("Phase1" = "#c6ffc7", "Phase2" = "#ffe718", 
+              "Phase3" = "#e88400", "Phase4" = "#e02d00", "Phase5" = "#5e0803")
 ```
 
 
-## Food Consumption Score (FCS) / Food Consumption Groups (FCG)
+```{r, fig.cap="Classe de diversité alimentaire des ménages par équipe"}
 
-### Food Consumption Groups by Admin1 
+graph_equipe(dta_mng, q18_code_equipe, HDDS_CH, CH_colors,
+             titre = "Classe de diversité alimentaire des ménages par équipe")
+```
+\newpage
+
+
+### Phasage de HDDS par équipe et Code de l'enquêteur
+
+```{r, fig.cap="Classe de diversité alimentaire des ménages par enquêteur et cercle"}
+
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, HDDS_CH, CH_colors,
+            titre = "Classe de diversité alimentaire par enquêteur et cercle")
+```
+\newpage
+
+### Liste des enquêteurs ayant des pourcentages élevées de Phase 3 et Plus
+
+```{r, tab.caption = "Liste des enquêteurs ayant plus de 50% de phase 2 à plus"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, HDDS_CH) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(HDDS_CH %in% str_c("Phase", 2:5)) %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  filter(pourcentage > 50) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+\newpage
+
+## Indice de stratégie d'adaptation reduit (rCSI)
+
 
 ```{r}
-ggplotly(FCGadm1_barplot)
+#calculate rCSI Score
+dta_mng <- dta_mng %>% 
+  mutate(rCSI = rCSILessQlty  + (2 * rCSIBorrow) + rCSIMealSize + 
+           (3 * rCSIMealAdult) + rCSIMealNb)
+var_label(dta_mng$rCSI) <- "Indice des stratégies d'adaptation réduite"
+
+#Create rCSI Cadre Harmonise Categories
+dta_mng<- dta_mng %>% 
+  mutate(rCSI_CH = case_when(rCSI <= 3 ~ "Phase1",
+                             between(rCSI,4,18) ~ "Phase2",
+                             rCSI >= 19 ~ "Phase3")
+         )
+
+#rCSI colors
+rCSI_colors = c("Phase1" = "#c6ffc7","Phase2" = "#ffe718","Phase3" = "#e88400")
 ```
 
-### Food Consumption Groups by Admin2
+
+### Phasage de rCSI par équipe
+
+```{r, fig.cap="Stratégies d'adaptation alimentaire par équipe"}
+
+graph_equipe(dta_mng, q18_code_equipe, rCSI_CH, rCSI_colors,
+             titre = "Stratégies d'adaptation alimentaire par équipe")
+```
+
+\newpage
+
+### Phasage de rCSI par équipe et Code de l'enquêteur
+
+```{r, fig.cap="Stratégies d'adaptation alimentaire par enquêteur et cercle"}
+
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, rCSI_CH, rCSI_colors,
+            titre = "Stratégies d'adaptation alimentaire par enquêteur et cercle")
+```
+
+\newpage
+
+### Liste des enquêteurs ayant des pourcentages élevées de Phase 2 et Plus
+
+```{r, tab.caption = "Liste des enquêteurs ayant plus de 50% de phase 2 à plus"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, rCSI_CH) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(rCSI_CH %in% str_c("Phase", 2:3)) %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  filter(pourcentage > 50) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+\newpage
+
+## Indice domestique de la faim (HHS)
 
 ```{r}
-ggplotly(FCGadm2_barplot)
+#Recode HHS questions into new variables with score
+dta_mng <- dta_mng %>% 
+  mutate(HHhSNoFood_FR_r = case_when(HHhSNoFood_FR == 1 ~ 1,
+                                     HHhSNoFood_FR == 2 ~ 1,
+                                     HHhSNoFood_FR == 3 ~ 2, TRUE ~ 0),
+         HHhSBedHung_FR_r = case_when(HHhSBedHung_FR == 1 ~ 1,
+                                      HHhSBedHung_FR == 2 ~ 1,
+                                      HHhSBedHung_FR == 3 ~ 2, TRUE ~ 0),
+         HHhSNotEat_FR_r = case_when(HHhSNotEat_FR == 1 ~ 1,
+                                     HHhSNotEat_FR == 2 ~ 1,
+                                     HHhSNotEat_FR == 3 ~ 2, TRUE ~ 0))
+# Calculate HHhS score
+dta_mng <- dta_mng %>% 
+  mutate(HHhS = HHhSNoFood_FR_r + HHhSBedHung_FR_r + HHhSNotEat_FR_r,
+         HHhS_CH = case_when(HHhS == 0 ~ "Phase1",
+                             HHhS == 1 ~ "Phase2",
+                             HHhS %in% c(2,3) ~ "Phase3",
+                             HHhS == 4 ~ "Phase4",
+                             HHhS >= 5 ~ "Phase5"))
 ```
 
-### Food Consumption Groups by Admin1 and Enumerator
+
+### Phasage de HHS par équipe
+
+```{r, fig.cap="Indice de faim par équipe"}
+
+graph_equipe(dta_mng, q18_code_equipe, HHhS_CH, CH_colors,
+             titre = "Indice de faim par équipe")
+```
+
+\newpage
+
+### Phasage de HHS par équipe et Code de l'enquêteur
+
+```{r, fig.cap="Indice de faim par enquêteur et cercle"}
+
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, HHhS_CH, CH_colors,
+            titre = "Indice de faim par enquêteur et cercle")
+```
+\newpage
+
+### Liste des enquêteurs ayant des pourcentages élevées de Phase 2 et Plus
+
+```{r, tab.caption = "Liste des enquêteurs ayant plus de 50% de phase 2 à plus"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, HHhS_CH) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(HHhS_CH %in% str_c("Phase", 2:5)) %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  filter(pourcentage > 50) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+
+\newpage
+
+## Strategie d’adaptation aux moyens d’existence (LhCS)
+
 
 ```{r}
-ggplotly(FCGadm1EnumName_barplot)
+#Stress
+dta_mng <- dta_mng %>% 
+  mutate(stress_coping = case_when(LhCSIStress1 == 1 | LhCSIStress1 ==2 ~ 1,
+                                   LhCSIStress2 == 1 | LhCSIStress2 ==2 ~ 1,
+                                   LhCSIStress3 == 1 | LhCSIStress3 ==2 ~ 1,
+                                   LhCSIStress4 == 1 | LhCSIStress4 ==2 ~ 1,
+                                   TRUE ~ 0))
+
+var_label(dta_mng$stress_coping) <- "le ménage s'est-il engagé dans des stratégies  de stress ?"
+
+#Crisis
+dta_mng <- dta_mng %>% 
+  mutate(crisis_coping = case_when(LhCSICrisis1 == 1 | LhCSICrisis1 == 2 ~ 1,
+                                   LhCSICrisis2 == 1 | LhCSICrisis2 == 2 ~ 1,
+                                   LhCSICrisis3 == 1 | LhCSICrisis3 == 2 ~ 1,
+                                   TRUE ~ 0))
+var_label(dta_mng$crisis_coping) <- "le ménage s'est-il engagé dans des stratégies d'adaptation aux crises ?"
+
+#Emergency
+dta_mng <- dta_mng %>% mutate(emergency_coping = case_when(
+  LhCSIEmergency1 == 1 | LhCSIEmergency1 == 2  ~ 1,
+  LhCSIEmergency2 == 1 | LhCSIEmergency2 == 2  ~ 1,
+  LhCSIEmergency3 == 1 | LhCSIEmergency3 == 2  ~ 1,
+  TRUE ~ 0))
+var_label(dta_mng$emergency_coping) <- "le ménage s'est-il engagé dans des stratégies d'adaptation d'urgence ?"
+
+#calculate Max_coping_behaviour
+dta_mng <- dta_mng %>% 
+  mutate(LhCSICat = case_when(emergency_coping == 1 ~ "StrategiesdeUrgence",
+                              crisis_coping == 1 ~ "StrategiesdeCrise",
+                              stress_coping == 1 ~ "StrategiesdeStress",
+                              TRUE ~ "Pasdestrategies"),
+         LhCSICat = fct_relevel(LhCSICat, c("Pasdestrategies",
+                                            "StrategiesdeStress",
+                                            "StrategiesdeCrise",
+                                            "StrategiesdeUrgence")))
+
+var_label(dta_mng$LhCSICat) <- "Catégories de stratégies d'adaptation aux moyens d'existence - version léger  de CARI"
+
+#CH colors
+LHCS_colors = c("Pasdestrategies" = "#c6ffc7","StrategiesdeStress" = "#ffe718","StrategiesdeCrise" = "#e88400","StrategiesdeUrgence" = "#e02d00")
+```
+\newpage
+
+### Phasage de LhCSI par équipe
+
+```{r, fig.cap="Strategies d’adaptation ME par équipe"}
+
+graph_equipe(dta_mng, q18_code_equipe, LhCSICat, LHCS_colors,
+             titre = "Strategies d’adaptation ME")
 ```
 
-### Boxplot of median FCS by enumerator
+\newpage
+
+### Phasage de LhCSI par équipe et Code de l'enquêteur
+
+```{r, fig.cap="Strategies d’adaptation ME par enquêteur et cercle"}
+
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, LhCSICat, LHCS_colors,
+            titre = "Strategies d’adaptation ME par enquêteur et cercle")
+```
+\newpage
+
+### Liste des enquêteurs ayant des pourcentages élevées de Phase 2 et Plus
+
+```{r, tab.caption = "Liste des enquêteurs ayant plus de 50% de phase 2 à plus"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, LhCSICat) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(LhCSICat %in% c("StrategiesdeStress", "StrategiesdeCrise",
+                         "StrategiesdeUrgence")) %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  filter(pourcentage > 50) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+
+### Liste des enquêteurs pour lesquels les stratégies supérieures sont adoptées avant celles inférieures (urgence ou crise adoptée avant stress)
+
+```{r, tab.caption = "Liste des enquêteurs ayant moins de 3 jours pour céréales"}
+dta_mng %>% 
+  filter((emergency_coping > crisis_coping) | (emergency_coping > stress_coping) | (crisis_coping > stress_coping)) %>%
+  select(q18_code_enqueteur, stress_coping, crisis_coping, emergency_coping) %>% 
+  group_by(q18_code_enqueteur) %>% summarise(nb_cas = n()) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+\newpage
+
+## Dépenses alimentaires et non alimentaire des ménages
+
 
 ```{r}
-ggplotly(FCSEnumNamebox)
+dta_mng <- dta_mng %>%
+  dplyr::mutate(
+    depalim_cereales = rowSums(across(
+      c(
+        q931a_Depenses_Cash_Cereales,
+        q931a_Depenses_Credit_Cereales,
+        q931d_Provenance_Cereales_Conso_don_humanit,
+        q931c_Valeur_Cereales_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_tubercul = rowSums(across(
+      c(
+        q932a_Depenses_Cash_Tubercul,
+        q932a_Depenses_Credit_Tubercul,
+        q932d_Provenance_Tubercul_Conso_don_humanit,
+        q932c_Valeur_Tubercul_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_legumineuse = rowSums(across(
+      c(
+        q933a_Depenses_Cash_leguminese,
+        q933a_Depenses_Credit_leguminese,
+        q933d_Provenance_leguminese_Conso_don_humanit,
+        q933c_Valeur_leguminese_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_legume = rowSums(across(
+      c(
+        q934a_Depenses_Cash_legume,
+        q934a_Depenses_Credit_legume,
+        q934d_Provenance_legume_Conso_don_humanit,
+        q934c_Valeur_legume_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_fruits = rowSums(across(
+      c(
+        q935a_Depenses_Cash_fruits,
+        q935a_Depenses_Credit_fruits,
+        q935d_Provenance_fruits_Conso_don_humanit,
+        q935c_Valeur_fruits_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_viande = rowSums(across(
+      c(
+        q936a_Depenses_Cash_viande,
+        q936a_Depenses_Credit_viande,
+        q936d_Provenance_viande_Conso_don_humanit,
+        q936c_Valeur_viande_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_lait = rowSums(across(
+      c(
+        q937a_Depenses_Cash_lait,
+        q937a_Depenses_Credit_lait,
+        q937d_Provenance_lait_Conso_don_humanit,
+        q937c_Valeur_lait_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_sucre = rowSums(across(
+      c(
+        q938a_Depenses_Cash_sucre,
+        q938a_Depenses_Credit_sucre,
+        q938d_Provenance_sucre_Conso_don_humanit,
+        q938c_Valeur_sucre_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_huile = rowSums(across(
+      c(
+        q939a_Depenses_Cash_huile,
+        q939a_Depenses_Credit_huile,
+        q939d_Provenance_huile_Conso_don_humanit,
+        q939c_Valeur_huile_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_condim = rowSums(across(
+      c(
+        q9310a_Depenses_Cash_condim,
+        q9310a_Depenses_Credit_condim,
+        q9310d_Provenance_condim_Conso_don_humanit,
+        q9310c_Valeur_condim_Conso_propr_prod
+      )
+    ), na.rm = T),
+    depalim_aliment_autres = rowSums(across(
+      c(
+        q9311a_Depenses_Autres_cash_repas,
+        q9311a_Depenses_Autres_credit_repas
+      )
+    ), na.rm = T),
+    depenses_alim = rowSums(across(starts_with("depalim_"))),
+    depnalim_electricite1m = rowSums(across(
+      c(q941_electricite_cash, q941_electricite_credit)
+    ), na.rm = T),
+    depnalim_eau1m = rowSums(across(c(
+      q942_eau_cash, q942_eau_credit
+    )), na.rm = T),
+    depnalim_logement1m = rowSums(across(
+      c(q943_logement_location_cash, q943_logement_location_credit)
+    ), na.rm = T),
+    depnalim_communications1m = rowSums(across(
+      c(
+        q944_phon_internet_abon_tele_cash,
+        q944_phon_internet_abon_tele_credit
+      )
+    ), na.rm = T),
+    depnalim_combustibles1m = rowSums(across(
+      c(
+        q945_bois_charbon_gaz_petrol_cash,
+        q945_bois_charbon_gaz_petrol_credit
+      )
+    ), na.rm = T),
+    depnalim_transport1m = rowSums(across(
+      c(q946_transport_cash, q946_transport_credit)
+    ), na.rm = T),
+    depnalim_savons1m = rowSums(across(
+      c(
+        q947_savon_prod_entre_nettoy_cash,
+        q947_savon_prod_entre_nettoy_credit
+      )
+    ), na.rm = T),
+    depnalim_hygiene1m = rowSums(across(
+      c(
+        q948_hygiene_soins_corporels_cash,
+        q948_hygiene_soins_corporels_credit
+      )
+    ), na.rm = T),
+    depnalim_services_rendus1m = rowSums(across(
+      c(
+        q949_paiement_service_rendu_cash,
+        q949_paiement_service_rendu_credit
+      )
+    ), na.rm = T),
+    depnalim_excitants1m = rowSums(across(
+      c(
+        q9410_tabac_cigarette_alcool_cash,
+        q9410_tabac_cigarette_alcool_credit
+      )
+    ), na.rm = T),
+    depnalim_kit_covid1m = rowSums(across(
+      c(
+        q9410_kit_prevention_covid19_cash,
+        q9410_kit_prevention_covid19_credit
+      )
+    ), na.rm = T),
+    
+    depenses_nalim1m = rowSums(across(ends_with("1m"))),
+    depnalim_dep_mediacales6m = rowSums(across(
+      c(
+        q9412_depenses_medical_sante_cash,
+        q9412_depenses_medical_sante_credit
+      )
+    ), na.rm = T),
+    depnalim_vetements6m = rowSums(across(
+      c(
+        q9413_vetements_chaussures_cash,
+        q9413_vetements_chaussures_credit
+      )
+    ), na.rm = T),
+    depnalim_education6m = rowSums(across(
+      c(
+        q9414_education_frais_scolarite_cash,
+        q9414_education_frais_scolarite_credit
+      )
+    ), na.rm = T),
+    depnalim_remboursement6m = rowSums(across(
+      c(
+        q9415_remboursement_dette_cash,
+        q9415_remboursement_dette_credit
+      )
+    ), na.rm = T),
+    depnalim_construction6m = rowSums(across(
+      c(
+        q9416_construction_reparat_log_cash,
+        q9416_construction_reparat_log_credit
+      )
+    ), na.rm = T),
+    depnalim_assistance_fam6m = rowSums(across(
+      c(
+        q9417_assistance_familiale_cash,
+        q9417_assistance_familiale_credit
+      )
+    ), na.rm = T),
+    depnalim_evenement_socio6m = rowSums(across(
+      c(
+        q9418_evenement_socio_festivit_cash,
+        q9418_evenement_socio_festivit_credit
+      )
+    ), na.rm = T),
+    depnalim_impots6m = rowSums(across(
+      c(
+        q9419_impots_amendes_taxes_cash,
+        q9419_impots_amendes_taxes_credit
+      )
+    ), na.rm = T),
+    depnalim_achat_modif_parures6m = rowSums(across(
+      c(
+        q9420_achat_modificat_parures_cash,
+        q9420_achat_modificat_parures_credit
+      )
+    ), na.rm = T),
+    depnalim_equipement_durable6m = rowSums(across(
+      c(
+        q9421_mobilier_equip_durable_cash,
+        q9421_mobilier_equip_durable_credit
+      )
+    ), na.rm = T),
+    depnalim_moyen_transport6m = rowSums(across(
+      c(
+        q9422_achat_moyen_transport_cash,
+        q9422_achat_moyen_transport_credit
+      )
+    ), na.rm = T),
+    depnalim_mo_agricole6m = rowSums(across(
+      c(
+        q9423_main_oeuvre_agricole_cash,
+        q9423_main_oeuvre_agricole_credit
+      )
+    ), na.rm = T),
+    depnalim_mo_elevage6m = rowSums(across(
+      c(
+        q9424_main_oeuvre_elevage_cash,
+        q9424_main_oeuvre_elevage_credit
+      )
+    ), na.rm = T),
+    depnalim_intrants_agricoles6m = rowSums(across(
+      c(
+        q9425_intrants_agricoles_cash,
+        q9425_intrants_agricoles_credit
+      )
+    ), na.rm = T),
+    depnalim_intrants_elevage6m = rowSums(across(
+      c(q9426_intrants_elevage_cash, q9426_intrants_elevage_credit)
+    ), na.rm = T),
+    depnalim_redevance_eau6m = rowSums(across(
+      c(q9427_redevance_eau_cash, q9427_redevance_eau_credit)
+    ), na.rm = T),
+    depnalim_autre6m = rowSums(across(c(
+      q9428_autre_cash, q9428_autre_credit
+    )), na.rm = T),
+    depenses_nalim6m = rowSums(across(ends_with("6m"))),
+    depenses_nalim = (depenses_nalim1m + depenses_nalim6m / 6),
+    part_dep_alim = depenses_alim / (depenses_alim + depenses_nalim),
+           cat_part_dep = case_when(
+             part_dep_alim <= .499 ~ "Moins de 50%",
+             part_dep_alim >= .5 & part_dep_alim < .65 ~ "[50% - 65%[",
+             part_dep_alim >= .65 & part_dep_alim <= .75 ~ "[65% - 75%]",
+             part_dep_alim > .75 ~ "Plus de 75%"),
+    cat_part_dep = fct_relevel(cat_part_dep, c("Moins de 50%",
+                                            "[50% - 65%[",
+                                            "[65% - 75%]",
+                                            "Plus de 75%"))
+  ) %>% 
+  relocate(depenses_alim, part_dep_alim, part_dep_alim, 
+           .before = depenses_nalim)
+
+foodshare_colors = c("Moins de 50%" = "#c6ffc7","[50% - 65%[" = "#ffe718",
+                "[65% - 75%]" = "#e88400","Plus de 75%" = "#e02d00")
 ```
 
-### Tableau of enumerators with outlier median FCS
+### Part des dépenses alimentaires par équipe
+
+```{r, fig.cap="Part des dépenses alimentaires par équipe"}
+
+graph_equipe(dta_mng, q18_code_equipe, cat_part_dep, foodshare_colors,
+             titre = "Part des dépenses alimentaires")
+```
+
+\newpage
+
+
+```{r, eval=F}
+dta_mng %>% as_label() %>% 
+  group_by(q12_nom_cercle) %>%  summarise(across(c(depenses_alim, depenses_nalim, part_dep_alim), mean))
+```
+
+
+### Dépenses (alimentaire et non alimentaire) aberrantes 
+
+**Ici nous créons une variable catégorielle en 4 modalités pour les dépenses alimentaires et non alimentaires mensuelles. Les dépenses sont soit fantaisistes (avec le seuil de 1000 F/ ménage), soit faibles (inférieures au 5e percentile), soit compris entre p5 et p95 soit supérieures au 95e percentiles**
+
+```{r, fig.cap="Catégories dépenses alimentaires par enquêteur et cercle"}
+seuil_alim <-  filter(dta_mng, depenses_alim > 1000) %>% 
+  select(depenses_alim) %>% quantile(probs = c(0.05, 0.95), na.rm = T)
+seuil_nalim <- filter(dta_mng, depenses_nalim > 1000) %>% 
+  select(depenses_nalim) %>% quantile(probs = c(0.05, 0.95), na.rm = T)
+
+dta_mng <- dta_mng %>% 
+  mutate(check_dep_alim = case_when(
+             depenses_alim <= 1000 ~ "Fantaisiste",
+             between(depenses_alim, 1000.01, seuil_alim[1]) ~ "Faible",
+             between(depenses_alim, seuil_alim[1]+0.1, seuil_alim[2]) 
+             ~ "Normale",
+             depenses_alim > seuil_alim[2] ~ "Elevée"),
+    check_dep_alim = fct_relevel(check_dep_alim, c("Fantaisiste",
+                                            "Faible",
+                                            "Normale",
+                                            "Elevée")),
+    check_dep_nalim = case_when(
+             depenses_nalim <= 1000 ~ "Fantaisiste",
+             between(depenses_nalim, 1000.01, seuil_nalim[1]) ~ "Faible",
+             between(depenses_nalim, seuil_nalim[1]+0.1, seuil_nalim[2]) 
+             ~ "Normale",
+             depenses_nalim > seuil_nalim[2] ~ "Elevée"),
+    check_dep_nalim = fct_relevel(check_dep_nalim, c("Fantaisiste",
+                                            "Faible",
+                                            "Normale",
+                                            "Elevée"))
+  )
+
+exp_colors = c("Fantaisiste" = "#e02d00", "Faible" = "#ffe718", 
+               "Normale" = "#c6ffc7", "Elevée" = "#e88400")
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, 
+            check_dep_alim, exp_colors,
+            titre = "Catégorie dépenses alimentaires par enquêteur et cercle")
+```
+\newpage
+
+
+```{r, fig.cap="Catégories dépenses non alimentaires par enquêteur et cercle"}
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, 
+            check_dep_nalim, exp_colors,
+            titre = "Catégorie dépenses non alimentaires par enquêteur et cercle")
+```
+
+\newpage
+
+```{r, message=F, tab.caption = "Liste des enquêteurs ayant des dépenses  aberrantes"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, check_dep_alim) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(check_dep_alim != "Normale") %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+\newpage
+
+```{r, message=F, tab.caption = "Liste des enquêteurs ayant des dépenses non alimentaires aberrantes"}
+dta_mng %>% 
+  group_by(q18_code_enqueteur, q12_nom_cercle, check_dep_nalim) %>% 
+  summarise(n = n()) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  mutate(perc = round(100 * n / sum(n), 1)) %>%  ungroup() %>% 
+  filter(check_dep_nalim != "Normale") %>% 
+  group_by(q18_code_enqueteur) %>%
+  summarise(pourcentage = sum(perc, na.rm = T),
+         nb_cas = sum(n, na.rm = T)) %>% ungroup() %>% 
+  left_join(list_enqtr) %>% 
+  relocate(pourcentage, nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
+```
+
+
+### Cohérence entre la consommation des groupes alimentaires et leurs dépenses
+
+Lorsqu'un groupe alimentaire est consommé dans un ménage donné, on doit avoir une trace des dépenses pour ce groupe (achat ou propre production ou don).
+
 
 ```{r}
-FCSOutliertable %>% arrange(desc(FCS_median)) %>% kbl() %>%  kable_styling()
-```
-
-### Cereal
-```{r}
-cereal <- dataset %>% filter(FCSStap <= 4) %>% select(ADMIN2Name, Community,HHID,TeamLeaderID, EnumName,FCSStap,FCSVeg, Survey_date) 
-
-datatable(cereal, rownames = FALSE, filter = "top")
-
-```
-
-### Cereal and vegetable and Dairy
-
-```{r}
-tabcerealelegumelait <- dataset %>% filter(FCSStap <= 4) %>% select(ADMIN2Name, Community,HHID,TeamLeaderID, EnumName,FCSStap,FCSVeg,FCSDairy, Survey_date) 
-
-datatable(tabcerealelegumelait, rownames = FALSE, filter = "top")
-
-```
-
-### vegetable
-```{r}
-legumefeuille <- dataset %>% filter(FCSVeg <= 3) %>% select(ADMIN2Name, Community,HHID,TeamLeaderID, EnumName,FCSVeg, Survey_date)
-
-datatable(legumefeuille, rownames = FALSE, filter = "top")
-
+dta_mng <- dta_mng %>% 
+  mutate(check_cereal = if_else(FCSStap > 0 & depalim_cereales < 1000, 1, 0),
+         check_legumineuse = if_else(FCSPulse > 0 & depalim_legumineuse < 1000,
+                                     1, 0),
+         check_lait = if_else(FCSDairy > 0 & depalim_lait < 1000, 1, 0),
+         check_viande = if_else(FCSPr > 0 & depalim_viande < 1000, 1, 0),
+         check_legume = if_else(FCSVeg > 0 & depalim_legume < 1000, 1, 0),
+         check_fruit = if_else(FCSFruit > 0 & depalim_fruits < 1000, 1, 0),
+         check_huile = if_else(FCSFat > 0 & depalim_huile < 1000, 1, 0),
+         check_sucre = if_else(FCSSugar > 0 & depalim_sucre < 1000, 1, 0),
+         consommation_vs_depense =
+           rowSums(across(c(check_cereal:check_sucre))),
+         cat_cons_vs_dep = if_else(consommation_vs_depense > 0,
+                                   "Incohérence", "Cohérence")
+         )
 
 ```
 
 
-## Household Dietary Diversity Score (HDDS)
 
-### HDDS phases by Admin1 
+```{r, fig.cap="Cohérence entre la consommation des groupes alimentaires et leurs dépenses"}
 
-```{r}
-ggplotly(HDDSadm1_barplot)
+cons_dep_colors = c("Cohérence" = "#c6ffc7", "Incohérence" = "#e88400")
+
+graph_enqtr(dta_mng, q18_code_enqueteur, q12_nom_cercle, 
+            cat_cons_vs_dep, cons_dep_colors,
+            titre = "Cohérence entre la consommation des groupes alimentaires et leurs dépenses")
 ```
 
-### HDDS phases by Admin2 
+\newpage
 
-```{r}
-ggplotly(HDDSadm2_barplot)
+```{r, message=F, tab.caption = "Liste des enquêteurs ayant des dépenses non alimentaires aberrantes"}
+dta_mng %>% filter(consommation_vs_depense > 0) %>% 
+  group_by(q18_code_enqueteur) %>% 
+  summarise(nb_cas = n()) %>% 
+  left_join(list_enqtr) %>% 
+  relocate(nb_cas, .after = telephone) %>% 
+  arrange(desc(nb_cas)) %>% 
+  mise_en_forme()
 ```
 
-### HDDS phases by Admin1 and Enumerator
-
-```{r}
-ggplotly(HDDSadm1EnumName_barplot)
-```
-
-## reduced Coping Strategy Index (rCSI)
-
-### rCSI (CH phases) by Admin1 
-
-```{r}
-ggplotly(rCSIadm1_barplot)
-```
-
-### rCSI (CH phases) by Admin2 
-
-```{r}
-ggplotly(rCSIadm2_barplot)
-```
-
-
-### rCSI (CH phases) by Admin1 and Enumerator
-
-```{r}
-ggplotly(rCSIadm1EnumName_barplot)
-```
-
-
-### Boxplot of median rCSI score 
-
-```{r}
-ggplotly(rcsiEnumNamebox)
-```
-
-### Table of enumerators with outlier median rcsi
-
-```{r}
-rcsiOutliertable %>% arrange(desc(rcsi_median)) %>% kbl() %>%  kable_styling()
-```
-
-
-## Household Hunger Scale (HHS)
-
-### HHS (CH phases) by Admin1 
-
-```{r}
-ggplotly(HHSadm1_barplot)
-```
-
-### HHS (CH phases) by Admin2 
-
-```{r}
-ggplotly(HHSadm2_barplot)
-```
-
-### HHS (CH phases) by Admin1 and Enumerator
-
-```{r}
-ggplotly(HHSadm1EnumName_barplot)
-```
-
-
-## Livelihood Coping Strategies (LhCS)
-
-### Livelihood Coping Strategies by Admin1 
-
-```{r}
-ggplotly(LHCSadm1_barplot)
-```
-
-
-### Livelihood Coping Strategies by Admin2 
-
-```{r}
-ggplotly(LHCSadm2_barplot)
-```
-
-
-### Livelihood Coping Strategies by Admin1 and Enumerator
-
-```{r}
-ggplotly(LHCSadm1EnumName_barplot)
-```
-
-Ajouter une section sur la dépense des ménages et faire des contrôles par rapport aux dépenses faibles (moins que la valeur du 5e percentile de l'enquête précédente) et détecter les enquêteurs qui ne renseignent pas du tout les dépenses non alimentaires.
